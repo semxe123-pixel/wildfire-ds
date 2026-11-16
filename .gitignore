@@ -1,0 +1,8 @@
+@"
+.env
+*.zip
+failed_tm.txt
+data/**
+!data/bronze/
+!data/bronze/README.md
+"@ | Out-File -Encoding utf8 .gitignore
