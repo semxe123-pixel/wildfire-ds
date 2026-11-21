@@ -19,9 +19,10 @@
 | 기상 관측 | `fetch_all.py` | `build_bronze_index.py`, `build_bronze_raw.py` |
 | 산불 사건 | `fetch_fire.py` | `build_bronze_fire_raw.py` |
 | 관측소 위치 | `fetch_stn.py` | `build_bronze_stn_raw.py` |
+| 법정동·행정동 코드 | (행정안전부 게시판에서 직접 다운로드) | `build_bronze_adm_raw.py` |
 
 ## 실행 준비
-1. `pip install requests python-dotenv pandas pyarrow`
+1. `pip install requests python-dotenv pandas pyarrow openpyxl`
 2. `.env.example`을 복사해 `.env`로 저장하고 인증키 입력 (기상청 API허브 키, 공공데이터포털 Decoding 키)
 3. 프로젝트 루트에서 실행 (`.env`와 `data/` 경로가 실행 위치 기준)
 
