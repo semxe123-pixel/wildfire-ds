@@ -14,7 +14,7 @@ LINE_RE = re.compile(
     r"(?P<HT>\S+)\s+(?P<HT_WD>\S+)\s+(?P<LAU_ID>\S+)\s+(?P<STN_AD>\S+)\s+"
     r"(?P<STN_KO>.+?)\s{2,}(?P<STN_EN>.+?)\s+"          # 이름 칸은 폭 20, 칸 사이는 공백 2개 이상
     r"(?P<FCT_ID>\S{8})\s+(?P<LAW_ID>\S{10})\s+"
-        r"(?P<BASIN>\d+|-+)\s*(?P<LAW_ADDR>.*?)\s*$"          # 숫자 또는 ---- 둘 다 허용            # BASIN 뒤 공백이 없어도(\s*) 잘림
+    r"(?P<BASIN>\d+|-+)\s*(?P<LAW_ADDR>.*?)\s*$"          # BASIN은 숫자 또는 ----. 뒤의 공백은 실제로 1칸(전 행)이고, \s*라서 0칸이어도 잘림
 )
 
 
