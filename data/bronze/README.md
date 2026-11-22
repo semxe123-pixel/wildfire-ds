@@ -184,3 +184,34 @@ python build_bronze_raw.py     # 구조화 표 재생성 + 건수 검증
 - 2024-01-01~2025-12-31 사이 말소된 관계 2,015행 (두 말소판 동일) → 날짜별 유효 매핑 필터 필수
 - 2026-07-01 이후 생성 3,505행, 2026-01 이후 말소 3,721행 = 7월 행정구역 개편(광주·전남·인천·안양)
 - 20261026 말소판이 20260101 말소판의 상위집합 → Silver 변환표는 20261026 말소판 기준, 20260101은 교차 검증용
+
+# Bronze — 표준 manifest
+
+## 목적
+- 설명서 4절 "컬럼을 포함한 수집 manifest"의 표준 열로 원천 4개의 수집 기록을 한 표에 모음
+- 원본과 기존 인덱스는 바꾸지 않음. 인덱스 4개 + adm_raw_check.csv를 읽어 새로 만듦
+
+## 파일
+- `manifest.parquet` / `manifest.csv` (UTF-8 BOM). 원본 파일 1개 = 1행, 17,598행
+- 코드 `build_bronze_manifest.py`
+
+## 열
+source_dataset, provider, endpoint, request_method, request_params_redacted(JSON, 인증키 제외),
+source_schema_version, requested_period_start/end, collected_at, collected_at_basis, bronze_file,
+sha256, size_bytes, record_count, collection_status, error_code,
+source_temporal_resolution, source_spatial_resolution, license, license_url, index_file
+
+## 기존 인덱스와의 대응
+- record_count: 기상·관측소 n_rows / 산불 n_items / 변환표 zip은 푼 폴더의 엑셀 행 수 합 (adm_raw_check.csv), Layout hwpx는 비움
+- collection_status: 기상 has_end / 산불 result_code 00 / 관측소는 끝 표시 확인 후에만 저장했으므로 전부 success
+- requested_period: 기상·관측소 tm(KST, +09:00) / 산불 searchStDt~searchEdDt / 변환표 기준일
+- collected_at_basis: 산불만 "요청 시 기록". 기상·관측소·변환표는 파일 저장 시각을 읽은 값
+- 설명서의 created_at·req_method·req_url·req_params·record_count·status → collected_at·request_method·endpoint·request_params_redacted·record_count·collection_status. res_data는 원본 파일(bronze_file) 자체
+
+## 검증 (2026-11-22)
+- 기상 17,544파일 12,549,269행 / 산불 25파일 738건 / 관측소 25파일 18,318행 / 변환표 zip 3개 282,442행 (+ hwpx 1). 실패 0, sha256 빠짐 0
+
+## 이용조건 (2026-11-22 확인)
+- 기상청(기상·관측소): 기상청 저작권정책, 자유이용·출처 표시. API허브 개별 약관은 따로 확인하지 않음
+- 산림청 산불: 공공데이터포털 "이용허락범위 제한 없음"
+- 행정안전부 코드표: 행안부 저작권정책, 공공누리 제1유형 부착 자료는 자유이용·출처 표시. 게시물의 마크 부착 여부 미확인
