@@ -56,7 +56,8 @@ def main():
         })
         print(f"{name}: 파싱 {len(rows)}행, 실패 {len(bad)}행")
 
-    pd.DataFrame(index_rows).to_parquet("data/bronze/stn_index.parquet", index=False)
+    idx = pd.DataFrame(index_rows)
+    idx.to_parquet("data/bronze/stn_index.parquet", index=False)
     raw = pd.concat(frames, ignore_index=True)
     raw.to_parquet("data/bronze/stn_raw.parquet", index=False)
 
@@ -65,12 +66,23 @@ def main():
         for name, s in all_bad[:5]:
             print(f"  [{name}] {s}")
 
-    a = set(frames[0]["STN_ID"]); b = set(frames[1]["STN_ID"])
-    print(f"\n2024초 {len(a)} / 2025말 {len(b)} / 합집합 {len(a | b)}")
-    print(f"2024초에만(폐지?) {len(a - b)} / 2025말에만(신설?) {len(b - a)}")
-    print("\n미리보기:")
-    print(raw[["STN_ID", "STN_KO", "LAW_ID", "BASIN", "LAW_ADDR"]].head(8).to_string())
-    print("\nLAW_ID 비어있거나 ---- 인 행:", (~raw["LAW_ID"].str.fullmatch(r"\d{10}")).sum())
+        # 건수 일치: 원본의 데이터 줄 수 = 구조화 표 행 수 + 나누지 못한 줄 수
+    expected = int(idx["n_rows"].sum())
+    print("\n=== 건수 검증 ===")
+    print(f"시점(파일) 수        : {len(files)}")
+    print(f"원본 데이터 줄 합계  : {expected:,}")
+    print(f"구조화 표 행 수      : {len(raw):,}")
+    print(f"나누지 못한 줄       : {len(all_bad):,}")
+    print("일치" if len(raw) + len(all_bad) == expected and not all_bad else "불일치 — 확인 필요")
+
+    # 시점 사이의 관측소 증감
+    tms = [f.replace("stn_aws_", "").replace(".txt", "") for f in files]
+    sets = [set(fr["STN_ID"]) for fr in frames]
+    print(f"\n처음({tms[0][:8]}) {len(sets[0])}곳 / 끝({tms[-1][:8]}) {len(sets[-1])}곳 / 합집합 {len(set().union(*sets))}곳")
+    for i in range(1, len(sets)):
+        add, rem = sets[i] - sets[i - 1], sets[i - 1] - sets[i]
+        if add or rem:
+            print(f"  {tms[i - 1][:8]} → {tms[i][:8]}: 신설 {len(add)} {sorted(add, key=int)} / 폐지 {len(rem)} {sorted(rem, key=int)}")
 
 
 if __name__ == "__main__":
