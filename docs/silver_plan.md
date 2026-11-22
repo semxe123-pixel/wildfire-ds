@@ -11,7 +11,7 @@
 | 3 | 산불 Label | `fire_raw` (+ 산불발생이력) + `adm_map` → `fire_label` | 사건 키 생성·중복 검사 · datetime · 약칭→정식명 · 주소의 동·리가 행정동인지 법정동인지 확인 → 행정동코드 · 피해면적 숫자화·단위 검증 · 매핑 실패 기록 · 행정동별 피해가 없으면 "행정동 Label 미확보" | 미착수. 산불발생이력(재난안전데이터공유플랫폼) 활용신청 승인 대기 |
 | 4 | 검증 보고 | 위 표들 → `silver_report.md` | 표별 행 수, 결측률, 범위 이탈 건수, 매핑 성공률, 변환 규칙 목록 | 기상 분만 (`silver_report_aws.md`) |
 
-**공통 기준 (2026-11-22)**: 모든 시각에 한국 시간 표시(`Asia/Seoul`) · 요소마다 검사 결과 번호 열(`qc_TA` 등, 0 정상 / 1 원래 결측 / 2 이상 각 검사) · `src_file` · 규칙 문서 · 처리 건수 · 결과물 설명은 `data/silver/README.md`
+**공통 기준 (2026-11-22)**: 설명서 표준 열 이름(`observed_at`, `available_at`, `station_id`, `bronze_file`, `admin_dong_code` 등) · 모든 시각에 한국 시간 표시(`Asia/Seoul`) · 요소마다 검사 결과 번호 열(`qc_TA` 등, 0 정상 / 1 원래 결측 / 2 이상 각 검사) · `src_file` · 규칙 문서 · 처리 건수 · 결과물 설명은 `data/silver/README.md`
 
 **Silver에서 하지 않는 것**: 행정동 단위로 합치기, 후방 통계(24시간 평균 등), Feature–Label 붙이기, 빈 시각 채우기 → 전부 Gold
 

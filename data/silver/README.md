@@ -6,7 +6,8 @@ Silver = Bronze의 글자 표를 계산할 수 있는 표로 바꾸고, 모든 �
 ## 공통 기준 (2026-11-22)
 - 시각: 모든 시각·날짜에 한국 시간 표시 (`Asia/Seoul`, 예: `2024-03-01 13:00+09:00`)
 - 검사 결과: 요소마다 검사 결과 번호 열 (예: `qc_TA`). 0 = 정상, 1 = 원래 결측(-99), 2 이상 = 각 검사. 번호표는 기상 규칙 설계에서 확정
-- 원천 추적: 모든 표에 `src_file`
+- 열 이름: 설명서(Gold 6절)의 표준명을 Silver부터 사용. 관측시각 `observed_at`, 이용 가능시각 `available_at`, 관측소 `station_id`(문자열), 원본 경로 `bronze_file`, 행정동 `admin_dong_code`·`admin_dong_name`. 표준명이 없는 법정동 쪽은 같은 방식으로 `legal_dong_code`·`legal_dong_name`
+- 원천 추적: 모든 표에 `bronze_file`
 - 옛 결과물(2026-11-16)은 `data/_archive/silver_20261116/`에 비교용으로 보관. 새 결과를 검증한 뒤 지움
 
 # 변환표
@@ -19,17 +20,17 @@ Silver = Bronze의 글자 표를 계산할 수 있는 표로 바꾸고, 모든 �
 - `data/bronze/adm_raw.parquet` 중 KIKmix, 20261026 말소판 (`jscode20261026_malso`) 단일 (규칙 A4)
 - 비교용: 20260101 일반판 KIKmix (검증 ①에만 사용)
 
-## adm_map 열
-- adm_cd, law_cd (문자열 10자리), sido, sigungu, adm_nm(행정동 이름), law_nm(법정동·리 이름)
+## adm_map 열 (설명서 표준명 기준)
+- admin_dong_code, legal_dong_code (문자열 10자리), sido_name, sigungu_name, admin_dong_name(행정동 이름), legal_dong_name(법정동·리 이름)
 - valid_from, valid_to: 관계의 유효기간. 한국 시간 00:00. valid_to가 비어 있으면 지금도 유효
-- adm_level (sido / sigungu / emd), law_level (sido / sigungu / emd / ri): 코드 자릿수로 구분
-- src_file
-- 날짜 d에 유효한 관계 = valid_from ≤ d AND (valid_to 없음 OR valid_to > d) (규칙 A1). 매핑에는 adm_level == emd만 사용 (규칙 A2)
+- admin_level (sido / sigungu / emd), legal_level (sido / sigungu / emd / ri): 코드 자릿수로 구분
+- bronze_file: Bronze 원본 경로 (`adm/폴더/파일`)
+- 날짜 d에 유효한 관계 = valid_from ≤ d AND (valid_to 없음 OR valid_to > d) (규칙 A1). 매핑에는 admin_level == emd만 사용 (규칙 A2)
 
 ## adm_changes_2024_2025 열
 - date: 관계가 생기거나 끝난 날, change: start / end
 - code_only: 같은 날 이름이 같은 관계가 반대쪽에 있으면 True (코드만 바뀜). False = 이름도 바뀜 (이름 변경, 분동, 합동 등)
-- sido, sigungu, adm_cd, adm_nm, law_cd, law_nm
+- sido_name, sigungu_name, admin_dong_code, admin_dong_name, legal_dong_code, legal_dong_name
 - 범위: 2024-01-02 ~ 2025-12-31에 생기거나 끝난 읍면동 수준 관계. 생성일 = 말소일인 행 제외
 
 ## 검증 (2026-11-22)
