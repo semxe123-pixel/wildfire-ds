@@ -166,3 +166,40 @@ Silver = Bronze의 글자 표를 계산할 수 있는 표로 바꾸고, 모든 �
 - 경계 파일이 두 시점뿐이라 기간 중 바뀐 행정동은 규칙으로 메움 (R1~R4, `docs/silver_plan.md`). 해당 행정동은 code_mapping·polygon_source·trimmed로 확인 가능
 - 소재지 검증(시군구 이름이 주소에 있나) 불일치 15곳: 세종(시군구 없음, 검증 코드 문제), 인천 2026-07 새 구 이름, 산지 시군 경계 875·694(좌표가 구역 안이라 좌표를 따름), 682(주소가 군사분계선 북쪽인 철원군 임남면)
 - 군사분계선 북쪽 행정동(임남면 등)도 경계 파일에 있어 대표점·후보가 있음 → Gold 범위에서 결정
+
+# 산불 Label (2026-11-23)
+
+한 줄 = 산림청 산불 사건 1건. Gold 학습 표에서 `admin_dong_code` + `ignition_at`으로 Feature(행정동 × 1시간)와 이음.
+
+## 파일
+| 파일 | 행 | 만든 코드 |
+|---|---|---|
+| `fire_label.parquet` / `.csv` | 738 | `build_silver_fire_label.py` |
+| `fire_geocode.parquet` / `.csv` | 38 (주소로 행정동을 하나로 못 정한 사건) | `build_silver_fire_geocode.py` |
+| `silver_report.md` | Silver 검증 보고 | `build_silver_report.py` |
+| (Bronze) `data/bronze/geocode/fire_geocode_raw.jsonl` | 지오코더 응답 원본, 키 없음. 커밋 안 함 | `build_silver_fire_geocode.py` |
+
+## 원천
+- 산림청 산불발생통계 (`data/bronze/fire_raw.parquet`): 주소(리·지번), 발생·진화 시각, 피해 면적(ha), 원인
+- 소방청 전국 화재 현황 2024·2025 (소방안전 빅데이터 플랫폼, `data/bronze/fire119/*.csv`): 사망, 부상, 재산피해(천원)
+- 브이월드 지오코더 API (지번 → 좌표, 모호·못 찾음 사건만)
+
+## fire_label 열
+- fire_id (연도-일련번호, 발생 시각 → 주소 순), year, ignition_at, extinguished_at (KST), duration_h, qc_time_flag (`end_before_start` 등)
+- 주소 원문: sido_raw, sigungu_raw, emd_raw, ri_dong_raw, bunji_raw / sido_name (정식 이름)
+- admin_dong_code (발생 시점에 유효한 행정동), admin_dong_name, sigungu_name, legal_dong_code
+- addr_mapping_status (confirmed / ambiguous / not_found), addr_text_status (지번 좌표 전 결과), addr_mapping_method (emd_ri, dong, gu_dong, emd_only, city_prefix, typo1, sido_wide, ri_only, geocode), addr_is_estimated (주소를 고쳐서 찾음), branch_to_parent (출장소 → 원래 읍면), n_candidates, admin_dong_candidates
+- geocode_lon, geocode_lat, geocode_in_candidates
+- Label: damage_area_ha, deaths, injuries, property_damage_kkrw (천원). 소방 연결이 없으면 사망·부상·재산피해는 빈 값(0 아님)
+- fire_cause, fire119_linked, fire119_wrinv_no, fire119_received_at, fire119_gap_min, fire119_fire_type, fire119_place, src_file
+
+## 결과
+- 행정동: 주소 글자로 700 (A0~A8) + 지번 좌표 34 = 734/738. 남은 4건(1.59 ha)은 Label 표에 두고 행정동 학습 표에서만 뺌
+- 소방청 연결 721/738 (임야 649, 다른 화재 종류 72). 시각 차이 중앙값 0.4분
+- 피해 면적: 중앙값 0.17 ha, 99% 80.45 ha, 최대 52,707.3 ha (의성 안계)
+
+## 한계
+- 산림청 주소에 오타·마을 이름이 있음 → 고쳐서 찾은 사건은 addr_is_estimated로 표시 (24건)
+- 소방청 연결이 안 된 17건은 사망·부상·재산피해를 모름
+- 진화 시각이 발생보다 빠른 1건은 값을 두고 표시만 함
+- 산림청에 없는 소방청 임야 화재 1,471건은 쓰지 않음 (산림청 기준 사건 표)

@@ -17,6 +17,8 @@ LICENSE = {
     "forest": ("이용허락범위 제한 없음 (공공데이터포털 표시, 2026-11-22 확인)",
                "https://www.data.go.kr/data/3070842/openapi.do"),
     "mois": ("미확인", ""),
+    "fire119": ("무료. 상품 페이지의 라이선스 칸은 비어 있음, 이용약관 별도 (2026-11-23 확인)",
+                "https://www.bigdata-119.kr/policy/useStplat"),
 }
 
 COLUMNS = [
@@ -222,8 +224,52 @@ def boundary():
     })
 
 
+def fire119():
+    """소방안전 빅데이터 플랫폼 '전국 화재 현황' CSV: 받은 그대로 둔 파일을 읽어 fire119_index.parquet로도 저장한다."""
+    base = f"{BRONZE}/fire119"
+    kst_tz = timezone(timedelta(hours=9))
+    rows = []
+    for f in sorted(x for x in os.listdir(base) if x.lower().endswith(".csv")):
+        path = os.path.join(base, f)
+        with open(path, "rb") as fh:
+            data = fh.read()
+        head = pd.read_csv(path, encoding="utf-8-sig", dtype=str, nrows=0)
+        year = next((y for y in ("2019", "2020", "2021", "2022", "2023", "2024", "2025") if y in f), "")
+        rows.append({
+            "file": f, "sha256": hashlib.sha256(data).hexdigest(), "size_bytes": len(data),
+            "n_rows": len(pd.read_csv(path, encoding="utf-8-sig", dtype=str, usecols=[0])),   # 따옴표 안 줄바꿈이 있어도 행 수를 맞게 셈
+            "n_cols": len(head.columns), "year": year,
+            "collected_at": datetime.fromtimestamp(os.path.getmtime(path), kst_tz).isoformat(timespec="seconds"),
+        })
+    idx = pd.DataFrame(rows)
+    idx.to_parquet(f"{BRONZE}/fire119_index.parquet", index=False)
+    lic, url = LICENSE["fire119"]
+    return pd.DataFrame({
+        "source_dataset": "전국 화재 현황 (소방청, 소방안전 빅데이터 플랫폼 상품 458). 화재 한 건당 한 줄, 화재조사번호 wrinv_no",
+        "provider": "소방청 (소방안전 빅데이터 플랫폼)",
+        "endpoint": "https://www.bigdata-119.kr/goods/goodsInfo?goods_mng_sn=458",
+        "request_method": "웹 내려받기 (회원 로그인, 무료)",
+        "request_params_redacted": "{}",
+        "source_schema_version": "CSV UTF-8 BOM, " + idx["n_cols"].astype(str) + "열 (상품 페이지 컬럼표는 약 70개, 설명문은 비어 있음)",
+        "requested_period_start": idx["year"] + "-01-01",
+        "requested_period_end": idx["year"] + "-12-31",
+        "collected_at": idx["collected_at"],
+        "collected_at_basis": "파일 수정 시각 (내려받은 시각)",
+        "bronze_file": "fire119/" + idx["file"],
+        "sha256": idx["sha256"],
+        "size_bytes": idx["size_bytes"],
+        "record_count": idx["n_rows"],
+        "collection_status": "success",
+        "error_code": "",
+        "source_temporal_resolution": "사건 (접수·출동·도착·초진·완진·귀소 시각, 초 단위)",
+        "source_spatial_resolution": "시도, 시군구 (관할 소방서·119안전센터 이름)",
+        "license": lic, "license_url": url,
+        "index_file": "fire119_index.parquet",
+    })
+
+
 def main():
-    m = pd.concat([aws(), fire(), stn(), adm(), boundary()], ignore_index=True)[COLUMNS]
+    m = pd.concat([aws(), fire(), stn(), adm(), boundary(), fire119()], ignore_index=True)[COLUMNS]
     m["record_count"] = m["record_count"].astype("Int64")
     m.to_parquet(f"{OUT}.parquet", index=False)
     m.to_csv(f"{OUT}.csv", index=False, encoding="utf-8-sig")
