@@ -101,3 +101,68 @@ Silver = Bronze의 글자 표를 계산할 수 있는 표로 바꾸고, 모든 �
 - 계단형 오류(값이 한 번 바뀐 뒤 유지), 기후범위(관측소·월별 정상 범위)는 검사하지 않음
 - 고산 관측소의 아주 낮은 습도는 진짜일 수 있어 높이가 비슷한 이웃과만 비교함 (규칙 3-6)
 - 풍향은 풍속 0.2 m/s 미만이면 의미 없음 (WMO). Silver에서는 그대로 두고 Gold에서 제외
+
+# 관측소 매핑 (관측소 위치, 소재지, 행정동 대표값 배정)
+
+## 파일 (2026-11-23)
+- `stn_month.parquet` / `.csv` 17,596행 (관측소 × 월). 코드 `build_silver_stn_month.py`
+- `stn_adm.parquet` / `.csv` 17,641행 (관측소 × 날짜 범위). 코드 `build_silver_stn_adm.py`
+- `adm_point.parquet` / `.csv` 85,675행 (행정동 × 날짜 범위). 코드 `build_silver_stn_assign.py`
+- `stn_assign.parquet` 3,421,620행 (행정동 × 날짜 범위 × 요소 × 순위). 같은 코드. 행이 많아 csv 없음
+- 옛 `stn_to_adm.parquet`(2026-11-16, 2시점·관측소당 위치 하나)는 쓰지 않음
+- 규칙 번호(P, B, D, R)와 근거는 `docs/silver_plan.md`
+
+## 원천
+- 관측소: `data/bronze/stn_raw.parquet` (지점정보 25시점: 2024-01~2025-12 매달 1일, 2025-12-31 23시)
+- 행정동 경계: `data/bronze/boundary/202411/`, `202512/` (행정안전부 "구역의 도형" 시도 17개 zip × 2시점, 그중 `TL_SCCO_GEMD` 행정동 층). 좌표계 정보가 없어 EPSG:5179로 확인, 글자 cp949
+- 코드 유효기간: `adm_map.parquet` / 후보 자격: `aws_availability.parquet`
+
+## 날짜 범위
+- `valid_from` 이상, `valid_to` 미만 (한국 시간). 시각 t의 행을 찾을 때 `valid_from <= t < valid_to`
+- 보통 한 달이 한 행. 그 달 안에서 행정동 코드가 바뀐 경우만 그 날짜로 나뉨 (예: 전북 2024-01-18)
+
+## stn_month 열
+- station_id, month (YYYYMM), lon, lat (WGS84), height_m, station_name
+- position_snapshot (쓴 지점정보 시점), position_source (first_of_month 그 달 1일 / next 달 중간 신설이라 다음 지점정보)
+- moved_in_month (다음 지점정보와 0.1 km 이상 차이), move_km_next
+- has_aws_data (그 달 기상 자료가 있는지), law_id_raw, law_addr_raw (지점정보 원문, 2026년 코드·이름이 섞여 있어 검증용), bronze_file
+
+## stn_adm 열 (소재지: 이 관측소는 그날 어느 행정동에 있나)
+- station_id, valid_from, valid_to, month
+- station_admin_dong_code, admin_dong_name, sigungu_name, sido_name: 그날 유효한 소재지 행정동
+- spatial_mapping_method: within (구역 안) / nearest (구역 밖, 가장 가까운 구역) / address (구역 밖, 주소로 정함)
+- code_mapping: boundary (경계 코드 그대로) / legal_bridge / name_bridge / other_boundary / address
+- boundary_admin_dong_code: 경계 파일에서 나온 원래 코드 (코드를 바꿨으면 비교용)
+- is_estimated: within이고 boundary가 아니면 True
+- mapping_confidence: 관측소 둘레 반경 100 m 원 중 그 구역 안에 드는 넓이 비율 (0~1). distance_to_boundary_m: 구역 밖이면 구역까지 거리
+- admin_boundary_version, admin_boundary_valid_from, admin_boundary_valid_to: 쓴 경계 파일과 그 사용 기간
+- lon, lat, moved_in_month, has_aws_data, position_snapshot, stn_bronze_file, boundary_file
+
+결과 (기상 자료가 있는 17,388행): within 17,080 · nearest 284 · address 24 / boundary 17,313 · name_bridge 45 · address 24 · other_boundary 6 / is_estimated 356 / 신뢰도 1.0인 행 82.7%
+
+## adm_point 열 (행정동 대표점)
+- admin_dong_code, valid_from, valid_to, month, admin_dong_name, sigungu_name, sido_name
+- admin_centroid_lon, admin_centroid_lat (WGS84), centroid_method (centroid 무게중심 / inside_point 무게중심이 구역 밖이라 구역 안의 점), area_km2
+- code_mapping: 구역 코드를 그날 코드로 맞춘 방법 (boundary, legal_bridge, name_bridge, overlap_bridge, overlap_split, sigungu_pair. 여러 구역을 합쳤으면 쉼표로 이음)
+- n_polygons (합친 구역 수), polygon_codes (원래 구역 코드), polygon_source (same 그 기간 경계 파일 / other_boundary 다른 경계 파일), trimmed (다른 경계 파일 구역과 겹친 만큼 깎였는지)
+- admin_boundary_version, admin_boundary_valid_from, admin_boundary_valid_to, boundary_file
+
+## stn_assign 열 (행정동 값을 채울 후보 관측소)
+- admin_dong_code, valid_from, valid_to, month, element (TA, WD, WS, RN_DAY, RN_HR1, HM, PA, PS)
+- rank (1~5, 가까운 순), station_id, distance_km (대표점에서 관측소까지)
+- station_height_m, station_outside (구역 밖 섬·바다 관측소)
+- station_count: 반경 30 km 안 후보 관측소 수 (같은 행정동·범위·요소에서 모든 순위가 같은 값)
+- admin_boundary_version
+- 후보 자격: 그 달 그 요소 값이 하나라도 있는 관측소, 대표점에서 30 km 안
+
+## Gold에서 쓰는 법
+- 행정동 c, 시각 t, 요소 e → `stn_assign`에서 c·e이고 `valid_from <= t < valid_to`인 행을 rank 순으로 봄
+- `aws_silver`에서 그 관측소의 시각 t 값이 있는(판정 1 결측·3 제거가 아닌) 첫 후보의 값을 씀
+- `station_distance_km` = 그 시각 실제로 쓴 후보의 distance_km, `station_count` = station_count
+- 관측소 → 소재지 행정동이 필요하면 `stn_adm`에서 같은 방식으로 날짜 범위를 찾음
+
+## 한계
+- 행정동 높이 자료가 없어 고도 차이(100 m당 약 0.65℃)를 보정하지 않음
+- 경계 파일이 두 시점뿐이라 기간 중 바뀐 행정동은 규칙으로 메움 (R1~R4, `docs/silver_plan.md`). 해당 행정동은 code_mapping·polygon_source·trimmed로 확인 가능
+- 소재지 검증(시군구 이름이 주소에 있나) 불일치 15곳: 세종(시군구 없음, 검증 코드 문제), 인천 2026-07 새 구 이름, 산지 시군 경계 875·694(좌표가 구역 안이라 좌표를 따름), 682(주소가 군사분계선 북쪽인 철원군 임남면)
+- 군사분계선 북쪽 행정동(임남면 등)도 경계 파일에 있어 대표점·후보가 있음 → Gold 범위에서 결정

@@ -1,4 +1,8 @@
+import hashlib
 import json
+import os
+import zipfile
+from datetime import datetime, timezone, timedelta
 from urllib.parse import parse_qsl
 import pandas as pd
 
@@ -12,10 +16,7 @@ LICENSE = {
             "https://www.kma.go.kr/kma/guide/copyright.jsp"),
     "forest": ("이용허락범위 제한 없음 (공공데이터포털 표시, 2026-11-22 확인)",
                "https://www.data.go.kr/data/3070842/openapi.do"),
-    "mois": ("행정안전부 저작권정책: 행안부가 저작재산권 전부를 보유한 저작물은 자유이용"
-             "(공공누리 제1유형 부착 자료), 출처 표시 필수. 코드표 게시물의 공공누리 마크 부착 여부는 미확인 "
-             "(2026-11-22 확인)",
-             "저작권정책_페이지_주소"),
+    "mois": ("미확인", ""),
 }
 
 COLUMNS = [
@@ -168,8 +169,61 @@ def adm():
     })
 
 
+def boundary():
+    """행정동 경계 zip: 인덱스가 따로 없어서 파일을 직접 읽어 만들고 boundary_index.parquet로도 저장한다."""
+    import pyogrio
+    base = f"{BRONZE}/boundary"
+    ref_day = {"202411": "2024-11-30", "202512": "2025-12-31"}      # 경계 기준월의 말일 (silver_plan 경계 기준일과 같음)
+    kst_tz = timezone(timedelta(hours=9))
+    rows = []
+    for ver in sorted(os.listdir(base)):
+        folder = os.path.join(base, ver)
+        if not os.path.isdir(folder):
+            continue
+        for z in sorted(f for f in os.listdir(folder) if f.lower().endswith(".zip")):
+            path = os.path.join(folder, z)
+            with open(path, "rb") as fh:
+                sha = hashlib.sha256(fh.read()).hexdigest()
+            with zipfile.ZipFile(path) as zf:
+                names = zf.namelist()
+            layers = sorted({os.path.basename(n)[:-4] for n in names if n.lower().endswith(".shp")})
+            gemd = [n for n in names if n.endswith("TL_SCCO_GEMD.shp")]
+            n_gemd = sum(pyogrio.read_info(f"zip://{path}!{g}")["features"] for g in gemd)
+            rows.append({
+                "version": ver, "file": f"{ver}/{z}", "sha256": sha, "size_bytes": os.path.getsize(path),
+                "layers": ",".join(layers), "has_prj": any(n.lower().endswith(".prj") for n in names),
+                "n_gemd": n_gemd,
+                "collected_at": datetime.fromtimestamp(os.path.getmtime(path), kst_tz).isoformat(timespec="seconds"),
+            })
+    idx = pd.DataFrame(rows)
+    idx.to_parquet(f"{BRONZE}/boundary_index.parquet", index=False)
+    lic, url = LICENSE["mois"]
+    return pd.DataFrame({
+        "source_dataset": "행정구역 경계 (구역의 도형, 시도별 zip). Silver에서 쓰는 층은 TL_SCCO_GEMD (행정동)",
+        "provider": "행정안전부 (주소기반산업지원서비스, 신청·승인 후 내려받기)",
+        "endpoint": "https://business.juso.go.kr",
+        "request_method": "웹 신청·승인 후 내려받기",
+        "request_params_redacted": "{}",
+        "source_schema_version": "SHP 층 " + idx["layers"] + " / 좌표계 정보(.prj) " + idx["has_prj"].map({True: "있음", False: "없음 → EPSG:5179로 확인"}) + " / 글자 cp949",
+        "requested_period_start": idx["version"].map(ref_day),
+        "requested_period_end": idx["version"].map(ref_day),
+        "collected_at": idx["collected_at"],
+        "collected_at_basis": "파일 수정 시각 (내려받은 시각)",
+        "bronze_file": "boundary/" + idx["file"],
+        "sha256": idx["sha256"],
+        "size_bytes": idx["size_bytes"],
+        "record_count": idx["n_gemd"],          # 행정동 층(TL_SCCO_GEMD) 구역 수. 출장소 포함
+        "collection_status": "success",
+        "error_code": "",
+        "source_temporal_resolution": "경계 스냅샷 (기준월 2024-11, 2025-12)",
+        "source_spatial_resolution": "행정동 경계 폴리곤 (EPSG:5179)",
+        "license": lic, "license_url": url,
+        "index_file": "boundary_index.parquet",
+    })
+
+
 def main():
-    m = pd.concat([aws(), fire(), stn(), adm()], ignore_index=True)[COLUMNS]
+    m = pd.concat([aws(), fire(), stn(), adm(), boundary()], ignore_index=True)[COLUMNS]
     m["record_count"] = m["record_count"].astype("Int64")
     m.to_parquet(f"{OUT}.parquet", index=False)
     m.to_csv(f"{OUT}.csv", index=False, encoding="utf-8-sig")
