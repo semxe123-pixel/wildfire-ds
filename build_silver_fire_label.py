@@ -260,8 +260,8 @@ if isb.any():
     print(f"[A9 출장소 → 원래 읍면] 출장소 코드 {int(isb.sum())}건 중 바꿈 {int(fr.branch_to_parent.sum())}건")
 
 # ================================================================ 3) 소방청 연결
-nf = pd.concat([pd.read_csv(f, encoding="utf-8-sig", dtype=str) for f in sorted(glob.glob("data/bronze/fire119/*.csv"))],
-               ignore_index=True)
+nf = pd.concat([pd.read_csv(f, encoding="utf-8-sig", dtype=str).assign(fire119_bronze_file="fire119/" + os.path.basename(f))
+                for f in sorted(glob.glob("data/bronze/fire119/*.csv"))], ignore_index=True)   # 계보: 어느 원본 CSV의 행인지
 nf["rcpt"] = pd.to_datetime(nf.rcpt_dt, format="%Y%m%d%H%M%S", errors="coerce").dt.tz_localize(TZ)
 nf["sido"] = nf.ctpv_nm.map(norm_sido)
 w0 = nf.sgg_nm.fillna("").astype(str).str.strip().str.split().str[0].fillna("")
@@ -281,7 +281,8 @@ def city_fs(sido, raw):
 
 
 fr["city"] = [city_fs(s, str(r).split()[0] if str(r).strip() else "") for s, r in zip(fr.sido, fr.locgungu.astype(str))]
-keep = ["sido", "city", "rcpt", "wrinv_no", "fire_type_nm", "fclt_plc_mclsf_nm", "dth_cnt", "injpsn_cnt", "prpt_dam_amt"]
+keep = ["sido", "city", "rcpt", "wrinv_no", "fire_type_nm", "fclt_plc_mclsf_nm", "dth_cnt", "injpsn_cnt", "prpt_dam_amt",
+        "fire119_bronze_file"]
 pair = fr[["fire_id", "sido", "city", "ignition_at"]].merge(nf[keep], on=["sido", "city"])   # K1
 pair["gap"] = (pair.rcpt - pair.ignition_at).dt.total_seconds() / 60
 pair = pair[pair.gap.abs() <= LINK_MIN].assign(absgap=lambda x: x.gap.abs(), forest=lambda x: x.fire_type_nm.eq("임야"))  # K2
@@ -297,7 +298,7 @@ lk = lk.rename(columns={"wrinv_no": "fire119_wrinv_no", "rcpt": "fire119_receive
                         "fire_type_nm": "fire119_fire_type", "fclt_plc_mclsf_nm": "fire119_place",
                         "dth_cnt": "deaths", "injpsn_cnt": "injuries", "prpt_dam_amt": "property_damage_kkrw"})
 lk = lk[["fire119_wrinv_no", "fire119_received_at", "fire119_gap_min", "fire119_fire_type", "fire119_place",
-         "deaths", "injuries", "property_damage_kkrw"]]
+         "deaths", "injuries", "property_damage_kkrw", "fire119_bronze_file"]]
 for c in ("deaths", "injuries", "property_damage_kkrw"):
     lk[c] = pd.to_numeric(lk[c], errors="coerce")
 fr = fr.join(lk, on="fire_id")                                                            # K4: 없으면 NaN
@@ -312,6 +313,9 @@ fr["duration_h"] = ((fr.extinguished_at - fr.ignition_at).dt.total_seconds() / 3
 fr["qc_time_flag"] = np.select([fr.ignition_at.isna(), fr.extinguished_at.isna(), fr.duration_h < 0],
                                ["no_ignition_time", "no_end_time", "end_before_start"], "")
 fr["year"] = fr.ignition_at.dt.year
+# 설명서: 원본 파일 경로의 표준 계보 필드는 bronze_file. 기존 이름(src_file)은 이 필드로 매핑하고 원본은 고치지 않음
+# 값 형식은 manifest.bronze_file과 같음 (data/bronze/ 아래 경로) → manifest와 바로 이어 볼 수 있음
+fr["bronze_file"] = "fire/" + fr["src_file"].astype(str)
 out = fr.rename(columns={"sido": "sido_name_full", "locsi": "sido_raw", "locgungu": "sigungu_raw", "locmenu": "emd_raw",
                          "locdong": "ri_dong_raw", "locbunji": "bunji_raw", "firecause": "fire_cause"})
 cols = ["fire_id", "year", "ignition_at", "extinguished_at", "duration_h", "qc_time_flag",
@@ -322,7 +326,7 @@ cols = ["fire_id", "year", "ignition_at", "extinguished_at", "duration_h", "qc_t
         "geocode_lon", "geocode_lat", "geocode_in_candidates",
         "damage_area_ha", "fire_cause",
         "fire119_linked", "fire119_wrinv_no", "fire119_received_at", "fire119_gap_min", "fire119_fire_type", "fire119_place",
-        "deaths", "injuries", "property_damage_kkrw", "src_file"]
+        "deaths", "injuries", "property_damage_kkrw", "bronze_file", "fire119_bronze_file"]
 out = out[[c for c in cols if c in out.columns]].rename(columns={"sido_name_full": "sido_name"})
 
 # ================================================================ 5) 검사

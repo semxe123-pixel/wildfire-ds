@@ -86,8 +86,13 @@ cnt = [{"날짜": f"{d:%Y-%m-%d}",
 table(pd.DataFrame(cnt))
 same_day = int((emd.valid_from == emd.vt).sum())
 bad = int((emd.valid_from > emd.vt).sum())
-check("S1-1", "유효기간 시작 ≤ 끝 (시작 > 끝인 행 없음)", bad == 0,
-      f"시작 > 끝 {bad} / 같은 날 생성·말소 {same_day}행은 원본 그대로 두며 어느 날에도 유효하지 않음(A1: 시작 ≤ d < 끝)")
+check("S1-1", "유효기간 시작 ≤ 끝", bad == 0,
+      f"시작 > 끝 {bad}행(원본 이상, A1 조건 '시작 ≤ d < 끝'을 어느 날에도 만족하지 않아 쓰이지 않음) / "
+      f"같은 날 생성·말소 {same_day}행(원본 그대로, 쓰이지 않음)", warn=True)
+if bad:
+    md("\n시작 > 끝인 원본 행\n")
+    table(emd[emd.valid_from > emd.vt][["admin_dong_code", "admin_dong_name", "legal_dong_code", "legal_dong_name",
+                                        "valid_from", "valid_to"]].astype(str))
 
 # ================================================================ S2·S3 기상
 md("\n## S2 기상 aws_silver\n")

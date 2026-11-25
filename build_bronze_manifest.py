@@ -19,10 +19,19 @@ LICENSE = {
     "mois": ("미확인", ""),
     "fire119": ("무료. 상품 페이지의 라이선스 칸은 비어 있음, 이용약관 별도 (2026-11-23 확인)",
                 "https://www.bigdata-119.kr/policy/useStplat"),
+    "vworld": ("미확인", ""),
 }
 
+# 설명서 3단계 저장 경로의 bronze 하위 폴더(weather / forest / labels)와 우리 폴더의 대응.
+# 폴더는 옮기지 않고(코드 경로가 깨지지 않게) 이 열로 설명서 구분대로 걸러 볼 수 있게 한다.
+# reference = 설명서 예시에 없는, 행정동을 붙이기 위한 참조 자료(변환표·경계·지오코더)
+GROUP = {"aws_index.parquet": "weather", "stn_index.parquet": "weather",
+         "fire_index.parquet": "forest", "fire119_index.parquet": "labels",
+         "adm_index.parquet": "reference", "boundary_index.parquet": "reference",
+         "(없음, 파일을 직접 읽음)": "reference"}
+
 COLUMNS = [
-    "source_dataset", "provider", "endpoint", "request_method", "request_params_redacted",
+    "bronze_group", "source_dataset", "provider", "endpoint", "request_method", "request_params_redacted",
     "source_schema_version", "requested_period_start", "requested_period_end",
     "collected_at", "collected_at_basis", "bronze_file", "sha256", "size_bytes",
     "record_count", "collection_status", "error_code",
@@ -268,14 +277,57 @@ def fire119():
     })
 
 
+def geocode():
+    """브이월드 지오코더 응답: Silver 7-2가 받아 둔 jsonl 1개 = 1행. 한 줄 = 요청 1회의 응답"""
+    import json as _json
+    path = f"{BRONZE}/geocode/fire_geocode_raw.jsonl"
+    if not os.path.exists(path):
+        print("지오코더 응답 파일 없음 → manifest에서 뺌")
+        return pd.DataFrame(columns=COLUMNS)
+    with open(path, "rb") as fh:
+        data = fh.read()
+    recs = [_json.loads(x) for x in data.decode("utf-8").splitlines() if x.strip()]
+    assert not any("key" in r.get("response", {}).get("input", {}) for r in recs), "응답에 인증키가 들어 있음"
+    status = pd.Series([r.get("response", {}).get("status", "") for r in recs]).value_counts().to_dict()
+    asked = pd.to_datetime(pd.Series([r["asked_at"] for r in recs]))
+    n_err = status.get("ERROR", 0)
+    lic, url = LICENSE["vworld"]
+    return pd.DataFrame([{
+        "source_dataset": "브이월드 지오코더 응답 (지번 주소 → 좌표). 주소로 행정동을 하나로 못 정한 산불만",
+        "provider": "국토교통부 브이월드 (VWorld)",
+        "endpoint": "https://api.vworld.kr/req/address",
+        "request_method": "GET",
+        "request_params_redacted": _json.dumps({"service": "address", "request": "getcoord", "type": "parcel",
+                                                "crs": "epsg:4326", "refine": "true"}, ensure_ascii=False),
+        "source_schema_version": "JSON Lines: query, asked_at, response (브이월드 응답 원문). 상태 " + str(status),
+        "requested_period_start": "",
+        "requested_period_end": "",
+        "collected_at": asked.max().isoformat(),
+        "collected_at_basis": "요청 시 기록 (줄마다 asked_at, 여기에는 가장 늦은 시각)",
+        "bronze_file": "geocode/fire_geocode_raw.jsonl",
+        "sha256": hashlib.sha256(data).hexdigest(),
+        "size_bytes": len(data),
+        "record_count": len(recs),
+        "collection_status": "success" if n_err == 0 else "partial",
+        "error_code": "" if n_err == 0 else f"ERROR {n_err}건",
+        "source_temporal_resolution": "요청 1회 (시간 단위 없음)",
+        "source_spatial_resolution": "지번 1개 → 점 좌표 (경위도)",
+        "license": lic, "license_url": url,
+        "index_file": "(없음, 파일을 직접 읽음)",
+    }])
+
+
 def main():
-    m = pd.concat([aws(), fire(), stn(), adm(), boundary(), fire119()], ignore_index=True)[COLUMNS]
+    m = pd.concat([aws(), fire(), stn(), adm(), boundary(), fire119(), geocode()], ignore_index=True)
+    m["bronze_group"] = m["index_file"].map(GROUP)
+    assert m["bronze_group"].notna().all(), "bronze_group이 정해지지 않은 행이 있음"
+    m = m[COLUMNS]
     m["record_count"] = m["record_count"].astype("Int64")
     m.to_parquet(f"{OUT}.parquet", index=False)
     m.to_csv(f"{OUT}.csv", index=False, encoding="utf-8-sig")
 
     print(f"manifest: {len(m):,}행 → {OUT}.parquet / .csv\n")
-    s = m.groupby("index_file").agg(파일=("bronze_file", "size"), 건수=("record_count", "sum"),
+    s = m.groupby(["bronze_group", "index_file"]).agg(파일=("bronze_file", "size"), 건수=("record_count", "sum"),
                                     실패=("collection_status", lambda x: (x != "success").sum()))
     print(s.to_string())
     print("\n이용조건 미확인:", sorted(m.loc[m["license"] == "미확인", "index_file"].unique()))
